@@ -1,0 +1,79 @@
+version: "3.9"
+
+# ─── Usage ────────────────────────────────────────────────────────────────────
+# anthropic-api mode (recommended for cloud/self-host):
+#   ANTHROPIC_API_KEY=sk-ant-xxx docker compose --profile anthropic up
+#
+# ollama mode (fully local, no API key):
+#   docker compose --profile ollama up
+#
+# Development (separate containers, hot-reload):
+#   docker compose --profile dev up
+
+services:
+  # ── Single-container production (anthropic-api) ──────────────────────────
+  app:
+    profiles: ["anthropic"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""   # empty = same-origin API calls
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      SERVE_STATIC: "true"
+      LLM_PROVIDER: anthropic-api
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-5}
+    restart: unless-stopped
+
+  # ── Single-container production (ollama) ─────────────────────────────────
+  app-ollama:
+    profiles: ["ollama"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      SERVE_STATIC: "true"
+      LLM_PROVIDER: ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  # ── Dev: separate frontend + backend with hot-reload ─────────────────────
+  backend-dev:
+    profiles: ["dev"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend/src:/app/src
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-anthropic-api}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-5}
+      FRONTEND_URL: http://localhost:5173
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

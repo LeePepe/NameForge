@@ -1,4 +1,16 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+/**
+ * AI Provider abstraction for NameForge.
+ *
+ * Controlled by the LLM_PROVIDER environment variable:
+ *   claude-code   (default) — uses @anthropic-ai/claude-agent-sdk, runs inside
+ *                             a Claude Code session (local dev)
+ *   anthropic-api           — uses @anthropic-ai/sdk directly with ANTHROPIC_API_KEY
+ *                             (cloud deployment)
+ *   ollama                  — calls a local Ollama instance via its OpenAI-compatible
+ *                             HTTP API (fully local, no API key required)
+ */
+
+import Anthropic from "@anthropic-ai/sdk";
 
 export interface NameSuggestion {
   name: string;
@@ -12,16 +24,15 @@ export interface GenerateNamesParams {
   projectPrompt: string;
 }
 
-export async function generateNames(
-  params: GenerateNamesParams
-): Promise<NameSuggestion[]> {
-  const { stylePrompt, projectPrompt } = params;
+// ─── Prompt builder ──────────────────────────────────────────────────────────
 
+function buildPrompt(params: GenerateNamesParams): string {
+  const { stylePrompt, projectPrompt } = params;
   const styleSection = stylePrompt
     ? `**Naming style preferences (apply to all suggestions):**\n${stylePrompt}\n\n`
     : "";
 
-  const prompt = `You are an expert brand naming consultant with 20 years of experience naming startups, products, and projects.
+  return `You are an expert brand naming consultant with 20 years of experience naming startups, products, and projects.
 
 ${styleSection}**Project to name:**
 ${projectPrompt}
@@ -42,20 +53,10 @@ Return ONLY a valid JSON object — no markdown, no explanation, no code fences:
 }
 
 Score each name 1-100 based on how well it fits both the project and the style preferences.`;
+}
 
-  let resultText = "";
-
-  for await (const message of query({ prompt })) {
-    if ("result" in message && typeof message.result === "string") {
-      resultText = message.result;
-    }
-  }
-
-  if (!resultText) {
-    throw new Error("No response from Claude");
-  }
-
-  const jsonText = resultText
+function parseSuggestions(text: string): NameSuggestion[] {
+  const jsonText = text
     .trim()
     .replace(/^```(?:json)?\n?/, "")
     .replace(/\n?```$/, "")
@@ -64,8 +65,113 @@ Score each name 1-100 based on how well it fits both the project and the style p
   const parsed = JSON.parse(jsonText) as { suggestions: NameSuggestion[] };
 
   if (!Array.isArray(parsed.suggestions)) {
-    throw new Error("Invalid response format from Claude");
+    throw new Error("Invalid response format from AI provider");
   }
 
   return parsed.suggestions;
+}
+
+// ─── Provider: claude-code ────────────────────────────────────────────────────
+
+async function generateWithClaudeCode(
+  params: GenerateNamesParams
+): Promise<NameSuggestion[]> {
+  // Dynamically imported so the server still starts even if this SDK is not
+  // installed (e.g. in a cloud deployment that only has @anthropic-ai/sdk).
+  const { query } = await import("@anthropic-ai/claude-agent-sdk").catch(() => {
+    throw new Error(
+      "LLM_PROVIDER=claude-code requires @anthropic-ai/claude-agent-sdk. " +
+        "Run: npm install @anthropic-ai/claude-agent-sdk --workspace=backend"
+    );
+  });
+
+  let resultText = "";
+  for await (const message of query({ prompt: buildPrompt(params) })) {
+    if ("result" in message && typeof message.result === "string") {
+      resultText = message.result;
+    }
+  }
+
+  if (!resultText) throw new Error("No response from Claude Code");
+  return parseSuggestions(resultText);
+}
+
+// ─── Provider: anthropic-api ──────────────────────────────────────────────────
+
+async function generateWithAnthropicApi(
+  params: GenerateNamesParams
+): Promise<NameSuggestion[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "LLM_PROVIDER=anthropic-api requires ANTHROPIC_API_KEY to be set"
+    );
+  }
+
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model: process.env.ANTHROPIC_MODEL || "claude-opus-4-5",
+    max_tokens: 2048,
+    messages: [{ role: "user", content: buildPrompt(params) }],
+  });
+
+  const block = response.content[0];
+  if (block.type !== "text") throw new Error("Unexpected response type");
+  return parseSuggestions(block.text);
+}
+
+// ─── Provider: ollama ─────────────────────────────────────────────────────────
+
+async function generateWithOllama(
+  params: GenerateNamesParams
+): Promise<NameSuggestion[]> {
+  const baseUrl = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+  const model = process.env.OLLAMA_MODEL || "llama3.2";
+
+  const response = await fetch(`${baseUrl}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      messages: [{ role: "user", content: buildPrompt(params) }],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Ollama request failed: ${response.status} ${response.statusText}`
+    );
+  }
+
+  const data = (await response.json()) as {
+    message?: { content?: string };
+  };
+
+  const text = data?.message?.content;
+  if (!text) throw new Error("No response from Ollama");
+  return parseSuggestions(text);
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export async function generateNames(
+  params: GenerateNamesParams
+): Promise<NameSuggestion[]> {
+  const provider = (process.env.LLM_PROVIDER || "claude-code").toLowerCase();
+
+  switch (provider) {
+    case "claude-code":
+      return generateWithClaudeCode(params);
+    case "anthropic-api":
+      return generateWithAnthropicApi(params);
+    case "ollama":
+      return generateWithOllama(params);
+    default:
+      throw new Error(
+        `Unknown LLM_PROVIDER: "${provider}". ` +
+          `Valid values: claude-code, anthropic-api, ollama`
+      );
+  }
 }
