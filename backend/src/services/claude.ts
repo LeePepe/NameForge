@@ -183,13 +183,17 @@ async function generateWithAzureFoundry(
     );
   }
 
+  console.log(`[azure-foundry] endpoint=${endpoint} deployment=${deployment} apiVersion=${apiVersion}`);
+
   const client = new AzureOpenAI({ endpoint, apiKey, apiVersion, deployment });
 
+  const t0 = Date.now();
   const response = await client.chat.completions.create({
     model: deployment,
     max_tokens: 1024,
     messages: [{ role: "user", content: buildPrompt(params) }],
   });
+  console.log(`[azure-foundry] api call ms=${Date.now() - t0} finish_reason=${response.choices[0]?.finish_reason}`);
 
   const text = response.choices[0]?.message?.content;
   if (!text) throw new Error("No response from Azure Foundry");

@@ -36,6 +36,9 @@ function validateRequest(body: unknown): {
 }
 
 router.post("/generate-names", async (req: Request, res: Response) => {
+  const start = Date.now();
+  const provider = process.env.LLM_PROVIDER || "claude-code";
+
   const validation = validateRequest(req.body);
 
   if (!validation.valid || !validation.params) {
@@ -44,12 +47,18 @@ router.post("/generate-names", async (req: Request, res: Response) => {
   }
 
   try {
+    console.log(`[generate-names] provider=${provider} start`);
     const suggestions = await generateNames(validation.params);
+    const ms = Date.now() - start;
+    console.log(`[generate-names] provider=${provider} success ms=${ms}`);
     res.json({ suggestions });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("Error generating names:", msg);
-    res.status(500).json({ error: "Failed to generate names. Please try again." });
+    const ms = Date.now() - start;
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error(`[generate-names] provider=${provider} error ms=${ms} message="${msg}"`);
+    if (stack) console.error(stack);
+    res.status(500).json({ error: `Failed to generate names: ${msg}` });
   }
 });
 
