@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+// Empty string = same-origin (Vercel / Docker single-container).
+// Override with VITE_API_URL for split-deployment local dev.
+const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 export interface NameSuggestion {
   name: string;

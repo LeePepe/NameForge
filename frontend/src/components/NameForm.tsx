@@ -4,6 +4,14 @@ import type { GenerateNamesParams } from "../api/nameApi";
 const STYLE_COOKIE = "nameforge_style";
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
+const DEFAULT_STYLE =
+  "Generate names inspired by precious and semi-precious gemstones. " +
+  "Names should evoke rarity, clarity, brilliance, and lasting value. " +
+  "Use gemstone names directly, combine them with a noun/verb, or draw " +
+  "from their qualities (crystalline, lustrous, faceted, refractive). " +
+  "Prefer single-word or compact two-part names. " +
+  "Feel: premium, timeless, distinctive, and slightly mysterious.";
+
 function readStyleCookie(): string {
   const match = document.cookie
     .split("; ")
@@ -109,7 +117,7 @@ function submitBtnStyle(disabled: boolean): React.CSSProperties {
 }
 
 export default function NameForm({ onSubmit, isLoading }: NameFormProps) {
-  const [stylePrompt, setStylePrompt] = useState(() => readStyleCookie());
+  const [stylePrompt, setStylePrompt] = useState(() => readStyleCookie() || DEFAULT_STYLE);
   const [projectPrompt, setProjectPrompt] = useState("");
   const [styleFocused, setStyleFocused] = useState(false);
   const [projectFocused, setProjectFocused] = useState(false);
