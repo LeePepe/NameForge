@@ -216,7 +216,7 @@ export default function App() {
       </main>
 
       <footer style={css.footer} className="fade-in">
-        Powered by Claude AI
+        Powered by Claude AI · v{__APP_VERSION__}
       </footer>
     </div>
   );

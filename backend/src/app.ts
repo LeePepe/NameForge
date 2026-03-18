@@ -2,6 +2,7 @@ import "dotenv/config";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import namesRouter from "./routes/names";
+import pkg from "../../package.json";
 
 const app = express();
 
@@ -21,7 +22,7 @@ if (!SERVE_STATIC) {
 app.use(express.json({ limit: "10kb" }));
 
 app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", version: pkg.version, timestamp: new Date().toISOString() });
 });
 
 app.use("/api", namesRouter);
