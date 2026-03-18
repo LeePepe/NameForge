@@ -4,6 +4,9 @@ version: "3.9"
 # anthropic-api mode (recommended for cloud/self-host):
 #   ANTHROPIC_API_KEY=sk-ant-xxx docker compose --profile anthropic up
 #
+# azure-foundry mode (Azure AI Foundry / Azure OpenAI):
+#   AZURE_FOUNDRY_ENDPOINT=https://... AZURE_FOUNDRY_API_KEY=... docker compose --profile azure-foundry up
+#
 # ollama mode (fully local, no API key):
 #   docker compose --profile ollama up
 #
@@ -27,6 +30,26 @@ services:
       LLM_PROVIDER: anthropic-api
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-5}
+    restart: unless-stopped
+
+  # ── Single-container production (azure-foundry) ─────────────────────────
+  app-azure:
+    profiles: ["azure-foundry"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ""   # empty = same-origin API calls
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      SERVE_STATIC: "true"
+      LLM_PROVIDER: azure-foundry
+      AZURE_FOUNDRY_ENDPOINT: ${AZURE_FOUNDRY_ENDPOINT}
+      AZURE_FOUNDRY_API_KEY: ${AZURE_FOUNDRY_API_KEY}
+      AZURE_FOUNDRY_DEPLOYMENT: ${AZURE_FOUNDRY_DEPLOYMENT:-DeepSeek-R1-0528}
+      AZURE_FOUNDRY_API_VERSION: ${AZURE_FOUNDRY_API_VERSION:-2024-12-01-preview}
     restart: unless-stopped
 
   # ── Single-container production (ollama) ─────────────────────────────────

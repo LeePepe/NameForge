@@ -8,9 +8,13 @@
  *                             (cloud deployment)
  *   ollama                  — calls a local Ollama instance via its OpenAI-compatible
  *                             HTTP API (fully local, no API key required)
+ *   azure-foundry           — calls Azure AI Foundry (Cognitive Services) via the
+ *                             OpenAI-compatible API using AZURE_FOUNDRY_API_KEY,
+ *                             AZURE_FOUNDRY_ENDPOINT, and AZURE_FOUNDRY_DEPLOYMENT
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { AzureOpenAI } from "openai";
 
 export interface NameSuggestion {
   name: string;
@@ -56,8 +60,10 @@ Score each name 1-100 based on how well it fits both the project and the style p
 }
 
 function parseSuggestions(text: string): NameSuggestion[] {
-  const jsonText = text
-    .trim()
+  // Strip DeepSeek-style <think>...</think> reasoning blocks
+  const stripped = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
+  const jsonText = stripped
     .replace(/^```(?:json)?\n?/, "")
     .replace(/\n?```$/, "")
     .trim();
@@ -154,6 +160,42 @@ async function generateWithOllama(
   return parseSuggestions(text);
 }
 
+// ─── Provider: azure-foundry ──────────────────────────────────────────────────
+
+async function generateWithAzureFoundry(
+  params: GenerateNamesParams
+): Promise<NameSuggestion[]> {
+  const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
+  const endpoint = process.env.AZURE_FOUNDRY_ENDPOINT;
+  const deployment =
+    process.env.AZURE_FOUNDRY_DEPLOYMENT || "gpt-4.1-mini";
+  const apiVersion =
+    process.env.AZURE_FOUNDRY_API_VERSION || "2024-12-01-preview";
+
+  if (!apiKey) {
+    throw new Error(
+      "LLM_PROVIDER=azure-foundry requires AZURE_FOUNDRY_API_KEY to be set"
+    );
+  }
+  if (!endpoint) {
+    throw new Error(
+      "LLM_PROVIDER=azure-foundry requires AZURE_FOUNDRY_ENDPOINT to be set"
+    );
+  }
+
+  const client = new AzureOpenAI({ endpoint, apiKey, apiVersion, deployment });
+
+  const response = await client.chat.completions.create({
+    model: deployment,
+    max_tokens: 2048,
+    messages: [{ role: "user", content: buildPrompt(params) }],
+  });
+
+  const text = response.choices[0]?.message?.content;
+  if (!text) throw new Error("No response from Azure Foundry");
+  return parseSuggestions(text);
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function generateNames(
@@ -168,10 +210,12 @@ export async function generateNames(
       return generateWithAnthropicApi(params);
     case "ollama":
       return generateWithOllama(params);
+    case "azure-foundry":
+      return generateWithAzureFoundry(params);
     default:
       throw new Error(
         `Unknown LLM_PROVIDER: "${provider}". ` +
-          `Valid values: claude-code, anthropic-api, ollama`
+          `Valid values: claude-code, anthropic-api, ollama, azure-foundry`
       );
   }
 }

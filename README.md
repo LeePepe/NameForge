@@ -12,6 +12,7 @@ Built with React + TypeScript (frontend) and Node.js + Express (backend). Suppor
 |---|---|---|
 | `claude-code` | Runs via Claude Code session (default) | Claude Code installed locally |
 | `anthropic-api` | Calls Anthropic API directly | `ANTHROPIC_API_KEY` |
+| `azure-foundry` | Azure AI Foundry / Azure OpenAI | `AZURE_FOUNDRY_ENDPOINT`, `AZURE_FOUNDRY_API_KEY` |
 | `ollama` | Local LLM via Ollama | [Ollama](https://ollama.com) running locally |
 
 ---
@@ -70,6 +71,16 @@ docker exec -it nameforge-ollama-1 ollama pull llama3.2
 
 Open http://localhost:3001
 
+### Azure Foundry mode
+
+```bash
+AZURE_FOUNDRY_ENDPOINT=https://your-resource.cognitiveservices.azure.com/ \
+AZURE_FOUNDRY_API_KEY=your-key \
+docker compose --profile azure-foundry up
+```
+
+Open http://localhost:3001
+
 ---
 
 ## Deploy to Vercel
@@ -77,11 +88,12 @@ Open http://localhost:3001
 1. Push this repo to GitHub
 2. Import the project at [vercel.com/new](https://vercel.com/new)
 3. Set environment variables in Vercel dashboard:
-   - `LLM_PROVIDER` = `anthropic-api`
-   - `ANTHROPIC_API_KEY` = your key
+   - `LLM_PROVIDER` = `azure-foundry` (or `anthropic-api`)
+   - For Azure Foundry: `AZURE_FOUNDRY_ENDPOINT`, `AZURE_FOUNDRY_API_KEY`, optionally `AZURE_FOUNDRY_DEPLOYMENT`
+   - For Anthropic: `ANTHROPIC_API_KEY`
 4. Deploy
 
-The `vercel.json` in the root handles routing for both frontend and backend.
+The `vercel.json` in the root handles routing: `/api/*` and `/health` go to the Express backend; everything else is served from the built frontend.
 
 ---
 
@@ -109,9 +121,13 @@ SERVE_STATIC=true
 
 | Variable | Default | Description |
 |---|---|---|
-| `LLM_PROVIDER` | `claude-code` | AI provider: `claude-code`, `anthropic-api`, `ollama` |
+| `LLM_PROVIDER` | `claude-code` | AI provider: `claude-code`, `anthropic-api`, `azure-foundry`, `ollama` |
 | `ANTHROPIC_API_KEY` | — | Required when `LLM_PROVIDER=anthropic-api` |
 | `ANTHROPIC_MODEL` | `claude-opus-4-5` | Anthropic model to use |
+| `AZURE_FOUNDRY_ENDPOINT` | — | Required when `LLM_PROVIDER=azure-foundry` (e.g. `https://your-resource.cognitiveservices.azure.com/`) |
+| `AZURE_FOUNDRY_API_KEY` | — | Required when `LLM_PROVIDER=azure-foundry` |
+| `AZURE_FOUNDRY_DEPLOYMENT` | `DeepSeek-R1-0528` | Azure Foundry model deployment name |
+| `AZURE_FOUNDRY_API_VERSION` | `2024-12-01-preview` | Azure OpenAI API version |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Ollama model to use |
 | `PORT` | `3001` | Backend server port |
