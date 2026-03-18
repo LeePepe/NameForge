@@ -190,7 +190,7 @@ async function generateWithAzureFoundry(
   const t0 = Date.now();
   const response = await client.chat.completions.create({
     model: deployment,
-    max_tokens: 4096,
+    max_tokens: 16000,
     messages: [{ role: "user", content: buildPrompt(params) }],
   });
   const choice = response.choices[0];
