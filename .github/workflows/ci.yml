@@ -37,3 +37,38 @@ jobs:
         working-directory: frontend
         env:
           VITE_API_URL: http://localhost:3001
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Build and push image via ACR Tasks
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          az acr build \
+            --registry nameforgeacr \
+            --resource-group NameForge \
+            --image nameforge:${IMAGE_TAG} \
+            --image nameforge:latest \
+            .
+
+      - name: Deploy new revision to Container App
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          # Generate a short revision suffix (first 7 chars of SHA)
+          REV_SUFFIX="sha-${IMAGE_TAG:0:7}"
+          az containerapp update \
+            --name nameforge \
+            --resource-group NameForge \
+            --image nameforgeacr.azurecr.io/nameforge:${IMAGE_TAG} \
+            --revision-suffix ${REV_SUFFIX}

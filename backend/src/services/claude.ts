@@ -60,7 +60,7 @@ Score each name 1-100 based on how well it fits both the project and the style p
 }
 
 function parseSuggestions(text: string): NameSuggestion[] {
-  // Strip DeepSeek-style <think>...</think> reasoning blocks
+  // Strip any <think>...</think> reasoning blocks (some models emit these)
   const stripped = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
   const jsonText = stripped
@@ -168,7 +168,7 @@ async function generateWithAzureFoundry(
   const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
   const endpoint = process.env.AZURE_FOUNDRY_ENDPOINT;
   const deployment =
-    process.env.AZURE_FOUNDRY_DEPLOYMENT || "gpt-4.1-mini";
+    process.env.AZURE_FOUNDRY_DEPLOYMENT || "Kimi-K2.5";
   const apiVersion =
     process.env.AZURE_FOUNDRY_API_VERSION || "2024-12-01-preview";
 
@@ -190,13 +190,22 @@ async function generateWithAzureFoundry(
   const t0 = Date.now();
   const response = await client.chat.completions.create({
     model: deployment,
-    max_tokens: 1024,
+    max_tokens: 4096,
     messages: [{ role: "user", content: buildPrompt(params) }],
   });
-  console.log(`[azure-foundry] api call ms=${Date.now() - t0} finish_reason=${response.choices[0]?.finish_reason}`);
+  const choice = response.choices[0];
+  console.log(`[azure-foundry] api call ms=${Date.now() - t0} finish_reason=${choice?.finish_reason} content_len=${choice?.message?.content?.length ?? 0}`);
 
-  const text = response.choices[0]?.message?.content;
-  if (!text) throw new Error("No response from Azure Foundry");
+  // DeepSeek-R1 puts reasoning in reasoning_content; final answer is in content
+  const text = choice?.message?.content;
+  if (!text) {
+    const reasoning = (choice?.message as unknown as Record<string, unknown>)?.reasoning_content;
+    throw new Error(
+      `No content from Azure Foundry (finish_reason=${choice?.finish_reason}). ` +
+      `reasoning_content length=${typeof reasoning === "string" ? reasoning.length : 0}. ` +
+      `Increase max_tokens if reasoning is truncated.`
+    );
+  }
   return parseSuggestions(text);
 }
 
