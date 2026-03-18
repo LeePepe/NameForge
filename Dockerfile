@@ -1,5 +1,8 @@
 # ─── Stage 1: Build frontend ──────────────────────────────────────────────────
 FROM node:20-alpine AS frontend-builder
+WORKDIR /app
+# Copy root package.json so vite.config.ts can resolve ../package.json for version
+COPY package.json ./
 WORKDIR /app/frontend
 COPY frontend/package.json ./
 RUN npm install
