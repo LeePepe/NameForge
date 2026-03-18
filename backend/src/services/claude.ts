@@ -187,7 +187,7 @@ async function generateWithAzureFoundry(
 
   const response = await client.chat.completions.create({
     model: deployment,
-    max_tokens: 2048,
+    max_tokens: 1024,
     messages: [{ role: "user", content: buildPrompt(params) }],
   });
 
