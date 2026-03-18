@@ -2,7 +2,7 @@ import "dotenv/config";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 import namesRouter from "./routes/names";
-import pkg from "../../package.json";
+import pkg from "../package.json";
 
 const app = express();
 

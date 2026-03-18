@@ -4,8 +4,8 @@ WORKDIR /app/frontend
 COPY frontend/package.json ./
 RUN npm install
 COPY frontend/ ./
-# Inject the backend URL at build time (can be overridden with --build-arg)
-ARG VITE_API_URL=http://localhost:3001
+# Inject the backend URL at build time (empty = same-origin, Railway/Docker single-container)
+ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
