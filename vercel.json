@@ -1,21 +1,20 @@
 {
   "version": 2,
-  "buildCommand": "npm run build --workspace=frontend && npm run build --workspace=backend",
-  "outputDirectory": "frontend/dist",
   "builds": [
     {
       "src": "backend/src/index.ts",
       "use": "@vercel/node"
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/backend/src/index.ts"
     },
     {
-      "source": "/health",
-      "destination": "/backend/src/index.ts"
+      "src": "frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
     }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "backend/src/index.ts" },
+    { "src": "/health", "dest": "backend/src/index.ts" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
