@@ -34,7 +34,8 @@ export type StreamEvent =
 
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
-function buildPrompt(params: GenerateNamesParams): string {
+/** @internal exported for unit testing */
+export function buildPrompt(params: GenerateNamesParams): string {
   const { stylePrompt, projectPrompt } = params;
   const styleSection = stylePrompt
     ? `**Naming style preferences (apply to all suggestions):**\n${stylePrompt}\n\n`
@@ -63,7 +64,8 @@ Return ONLY a valid JSON object — no markdown, no explanation, no code fences:
 Score each name 1-100 based on how well it fits both the project and the style preferences.`;
 }
 
-function parseSuggestions(text: string): NameSuggestion[] {
+/** @internal exported for unit testing */
+export function parseSuggestions(text: string): NameSuggestion[] {
   // Strip any <think>...</think> reasoning blocks (some models emit these)
   const stripped = text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 
@@ -229,12 +231,13 @@ async function* streamAzureFoundry(
   const client = new AzureOpenAI({ endpoint, apiKey, apiVersion, deployment });
   const t0 = Date.now();
 
+  // Allow operators to tune token budget via env var; default raised to 8192 so
+  // reasoning models have more headroom before producing output tokens.
+  const maxTokens = parseInt(process.env.AZURE_FOUNDRY_STREAM_MAX_TOKENS ?? "8192", 10);
+
   const stream = await client.chat.completions.create({
     model: deployment,
-    // Reduced from 16000: reasoning models use most tokens on thinking before
-    // producing output. 4096 is enough for 6 name suggestions while keeping
-    // total response time well within platform timeouts (~30-60 s in practice).
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     stream: true,
     messages: [{ role: "user", content: buildPrompt(params) }],
   });
@@ -242,8 +245,10 @@ async function* streamAzureFoundry(
   let fullText = "";
   let reasoningTokens = 0;
   let finishReason: string | null = null;
+  let chunkCount = 0;
 
   for await (const chunk of stream) {
+    chunkCount++;
     const choice = chunk.choices[0];
     const delta = choice?.delta?.content ?? "";
     // Reasoning models (DeepSeek-R1, Kimi-K2.5, etc.) stream thinking tokens
@@ -269,17 +274,23 @@ async function* streamAzureFoundry(
 
   console.log(
     `[azure-foundry-stream] done ms=${Date.now() - t0} ` +
-    `finish_reason=${finishReason} content_len=${fullText.length} ` +
-    `reasoning_chars=${reasoningTokens}`
+    `chunks=${chunkCount} finish_reason=${finishReason} ` +
+    `content_len=${fullText.length} reasoning_chars=${reasoningTokens}`
   );
 
   if (!fullText) {
-    throw new Error(
-      `Azure Foundry returned no content after streaming ` +
-      `(finish_reason=${finishReason}, reasoning_chars=${reasoningTokens}). ` +
-      `The model may have exhausted max_tokens during reasoning. ` +
-      `Try a simpler prompt or adjust AZURE_FOUNDRY_DEPLOYMENT.`
+    // Streaming produced no content tokens. This can happen when the deployment
+    // does not support streaming, when content filtering silently swallows the
+    // response, or when all chunks contain only empty choices. Fall back to the
+    // non-streaming call so the user still gets a result.
+    console.warn(
+      `[azure-foundry-stream] streaming produced no content ` +
+      `(chunks=${chunkCount}, finish_reason=${finishReason}, ` +
+      `reasoning_chars=${reasoningTokens}). Falling back to non-streaming call.`
     );
+    const suggestions = await generateWithAzureFoundry(params);
+    yield { type: "done", suggestions };
+    return;
   }
 
   const suggestions = parseSuggestions(fullText);

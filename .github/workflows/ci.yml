@@ -28,6 +28,14 @@ jobs:
         run: npm install
         working-directory: frontend
 
+      - name: Test backend
+        run: npm test
+        working-directory: backend
+
+      - name: Test frontend
+        run: npm test
+        working-directory: frontend
+
       - name: Build backend
         run: npm run build
         working-directory: backend
@@ -72,3 +80,33 @@ jobs:
             --resource-group NameForge \
             --image nameforgeacr.azurecr.io/nameforge:${IMAGE_TAG} \
             --revision-suffix ${REV_SUFFIX}
+
+  version-bump:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Fetch full history so git push works correctly
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump minor version
+        run: |
+          NEW_VERSION=$(node scripts/bump-version.js minor)
+          git add package.json backend/package.json frontend/package.json
+          git commit -m "chore: bump version to ${NEW_VERSION} [skip ci]"
+          git push
