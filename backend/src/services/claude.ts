@@ -28,6 +28,10 @@ export interface GenerateNamesParams {
   projectPrompt: string;
 }
 
+export type StreamEvent =
+  | { type: "token"; text: string }
+  | { type: "done"; suggestions: NameSuggestion[] };
+
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
 function buildPrompt(params: GenerateNamesParams): string {
@@ -209,6 +213,73 @@ async function generateWithAzureFoundry(
   return parseSuggestions(text);
 }
 
+async function* streamAzureFoundry(
+  params: GenerateNamesParams
+): AsyncGenerator<StreamEvent> {
+  const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
+  const endpoint = process.env.AZURE_FOUNDRY_ENDPOINT;
+  const deployment = process.env.AZURE_FOUNDRY_DEPLOYMENT || "Kimi-K2.5";
+  const apiVersion = process.env.AZURE_FOUNDRY_API_VERSION || "2024-12-01-preview";
+
+  if (!apiKey) throw new Error("LLM_PROVIDER=azure-foundry requires AZURE_FOUNDRY_API_KEY to be set");
+  if (!endpoint) throw new Error("LLM_PROVIDER=azure-foundry requires AZURE_FOUNDRY_ENDPOINT to be set");
+
+  console.log(`[azure-foundry-stream] endpoint=${endpoint} deployment=${deployment}`);
+
+  const client = new AzureOpenAI({ endpoint, apiKey, apiVersion, deployment });
+  const t0 = Date.now();
+
+  const stream = await client.chat.completions.create({
+    model: deployment,
+    max_tokens: 16000,
+    stream: true,
+    messages: [{ role: "user", content: buildPrompt(params) }],
+  });
+
+  let fullText = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content ?? "";
+    if (delta) {
+      fullText += delta;
+      yield { type: "token", text: delta };
+    }
+  }
+
+  console.log(`[azure-foundry-stream] done ms=${Date.now() - t0} text_len=${fullText.length}`);
+  const suggestions = parseSuggestions(fullText);
+  yield { type: "done", suggestions };
+}
+
+async function* streamAnthropicApi(
+  params: GenerateNamesParams
+): AsyncGenerator<StreamEvent> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("LLM_PROVIDER=anthropic-api requires ANTHROPIC_API_KEY to be set");
+
+  const client = new Anthropic({ apiKey });
+  const t0 = Date.now();
+
+  const stream = await client.messages.create({
+    model: process.env.ANTHROPIC_MODEL || "claude-opus-4-5",
+    max_tokens: 2048,
+    stream: true,
+    messages: [{ role: "user", content: buildPrompt(params) }],
+  });
+
+  let fullText = "";
+  for await (const event of stream) {
+    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+      const delta = event.delta.text;
+      fullText += delta;
+      yield { type: "token", text: delta };
+    }
+  }
+
+  console.log(`[anthropic-stream] done ms=${Date.now() - t0} text_len=${fullText.length}`);
+  const suggestions = parseSuggestions(fullText);
+  yield { type: "done", suggestions };
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function generateNames(
@@ -230,5 +301,35 @@ export async function generateNames(
         `Unknown LLM_PROVIDER: "${provider}". ` +
           `Valid values: claude-code, anthropic-api, ollama, azure-foundry`
       );
+  }
+}
+
+/**
+ * Streaming variant of generateNames.
+ *
+ * Yields { type: "token", text } events for each streamed token (azure-foundry
+ * and anthropic-api), then a final { type: "done", suggestions } event.
+ * For providers that don't support native streaming (claude-code, ollama), it
+ * falls through to the regular blocking call and only emits the "done" event.
+ * The route layer injects periodic SSE heartbeats between events so the
+ * platform never sees an idle connection.
+ */
+export async function* generateNamesStream(
+  params: GenerateNamesParams
+): AsyncGenerator<StreamEvent> {
+  const provider = (process.env.LLM_PROVIDER || "claude-code").toLowerCase();
+
+  switch (provider) {
+    case "azure-foundry":
+      yield* streamAzureFoundry(params);
+      break;
+    case "anthropic-api":
+      yield* streamAnthropicApi(params);
+      break;
+    default: {
+      // claude-code, ollama — no native streaming; run blocking and return done
+      const suggestions = await generateNames(params);
+      yield { type: "done", suggestions };
+    }
   }
 }
