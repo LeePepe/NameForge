@@ -231,21 +231,57 @@ async function* streamAzureFoundry(
 
   const stream = await client.chat.completions.create({
     model: deployment,
-    max_tokens: 16000,
+    // Reduced from 16000: reasoning models use most tokens on thinking before
+    // producing output. 4096 is enough for 6 name suggestions while keeping
+    // total response time well within platform timeouts (~30-60 s in practice).
+    max_tokens: 4096,
     stream: true,
     messages: [{ role: "user", content: buildPrompt(params) }],
   });
 
   let fullText = "";
+  let reasoningTokens = 0;
+  let finishReason: string | null = null;
+
   for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content ?? "";
+    const choice = chunk.choices[0];
+    const delta = choice?.delta?.content ?? "";
+    // Reasoning models (DeepSeek-R1, Kimi-K2.5, etc.) stream thinking tokens
+    // in reasoning_content; the final answer arrives in content.
+    const reasoningDelta =
+      (choice?.delta as unknown as Record<string, unknown>)
+        ?.reasoning_content as string ?? "";
+
+    if (finishReason === null && choice?.finish_reason) {
+      finishReason = choice.finish_reason;
+    }
+
     if (delta) {
       fullText += delta;
       yield { type: "token", text: delta };
+    } else if (reasoningDelta) {
+      // Still reasoning — yield an empty-text token so the route layer's
+      // for-await loop keeps running and SSE heartbeats continue to flow.
+      reasoningTokens += reasoningDelta.length;
+      yield { type: "token", text: "" };
     }
   }
 
-  console.log(`[azure-foundry-stream] done ms=${Date.now() - t0} text_len=${fullText.length}`);
+  console.log(
+    `[azure-foundry-stream] done ms=${Date.now() - t0} ` +
+    `finish_reason=${finishReason} content_len=${fullText.length} ` +
+    `reasoning_chars=${reasoningTokens}`
+  );
+
+  if (!fullText) {
+    throw new Error(
+      `Azure Foundry returned no content after streaming ` +
+      `(finish_reason=${finishReason}, reasoning_chars=${reasoningTokens}). ` +
+      `The model may have exhausted max_tokens during reasoning. ` +
+      `Try a simpler prompt or adjust AZURE_FOUNDRY_DEPLOYMENT.`
+    );
+  }
+
   const suggestions = parseSuggestions(fullText);
   yield { type: "done", suggestions };
 }

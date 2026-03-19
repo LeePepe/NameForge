@@ -99,7 +99,7 @@ router.post("/generate-names-stream", async (req: Request, res: Response) => {
   // ── Heartbeat — keeps connection alive for non-streaming providers ────────
   const heartbeat = setInterval(() => {
     res.write(": heartbeat\n\n");
-  }, 15000);
+  }, 8000);
 
   const cleanup = () => clearInterval(heartbeat);
   req.on("close", cleanup);
