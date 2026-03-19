@@ -246,9 +246,14 @@ async function* streamAzureFoundry(
   let reasoningTokens = 0;
   let finishReason: string | null = null;
   let chunkCount = 0;
+  let ttft: number | null = null; // time-to-first-token
 
   for await (const chunk of stream) {
     chunkCount++;
+    if (ttft === null) {
+      ttft = Date.now() - t0;
+      console.log(`[azure-foundry-stream] first chunk ms=${ttft}`);
+    }
     const choice = chunk.choices[0];
     const delta = choice?.delta?.content ?? "";
     // Reasoning models (DeepSeek-R1, Kimi-K2.5, etc.) stream thinking tokens
@@ -274,7 +279,7 @@ async function* streamAzureFoundry(
 
   console.log(
     `[azure-foundry-stream] done ms=${Date.now() - t0} ` +
-    `chunks=${chunkCount} finish_reason=${finishReason} ` +
+    `ttft=${ttft ?? "never"} chunks=${chunkCount} finish_reason=${finishReason} ` +
     `content_len=${fullText.length} reasoning_chars=${reasoningTokens}`
   );
 
