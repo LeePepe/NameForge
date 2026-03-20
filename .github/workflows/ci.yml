@@ -59,6 +59,13 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
+    env:
+      AZURE_RESOURCE_GROUP: NameForge
+      AZURE_LOCATION: southeastasia
+      AZURE_FOUNDRY_ENDPOINT: ${{ vars.AZURE_FOUNDRY_ENDPOINT }}
+      AZURE_FOUNDRY_DEPLOYMENT: ${{ vars.AZURE_FOUNDRY_DEPLOYMENT || 'Kimi-K2.5' }}
+      AZURE_FOUNDRY_API_VERSION: ${{ vars.AZURE_FOUNDRY_API_VERSION || '2024-12-01-preview' }}
+      AZURE_FOUNDRY_API_KEY: ${{ secrets.AZURE_FOUNDRY_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -68,14 +75,44 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Provision Singapore infrastructure
+        id: infra
+        run: |
+          set -euo pipefail
+
+          DEPLOYMENT_OUTPUTS=$(az deployment group create \
+            --name "nameforge-sg-${GITHUB_RUN_ID}" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --template-file infra/main.bicep \
+            --parameters \
+              location="$AZURE_LOCATION" \
+              azureFoundryEndpoint="$AZURE_FOUNDRY_ENDPOINT" \
+              azureFoundryApiKey="$AZURE_FOUNDRY_API_KEY" \
+              azureFoundryDeployment="$AZURE_FOUNDRY_DEPLOYMENT" \
+              azureFoundryApiVersion="$AZURE_FOUNDRY_API_VERSION" \
+            --query properties.outputs \
+            -o json)
+
+          ACR_NAME=$(echo "$DEPLOYMENT_OUTPUTS" | jq -r '.acrName.value')
+          ACR_LOGIN_SERVER=$(echo "$DEPLOYMENT_OUTPUTS" | jq -r '.acrLoginServer.value')
+          CONTAINER_APP_NAME=$(echo "$DEPLOYMENT_OUTPUTS" | jq -r '.containerAppName.value')
+          CONTAINER_APP_URL=$(echo "$DEPLOYMENT_OUTPUTS" | jq -r '.containerAppUrl.value')
+          IMAGE_REPOSITORY=$(echo "$DEPLOYMENT_OUTPUTS" | jq -r '.imageRepository.value')
+
+          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+          echo "acr_login_server=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+          echo "container_app_name=$CONTAINER_APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "container_app_url=$CONTAINER_APP_URL" >> "$GITHUB_OUTPUT"
+          echo "image_repository=$IMAGE_REPOSITORY" >> "$GITHUB_OUTPUT"
+
       - name: Build and push image via ACR Tasks
         run: |
           IMAGE_TAG=${{ github.sha }}
           az acr build \
-            --registry nameforgeacr \
-            --resource-group NameForge \
-            --image nameforge:${IMAGE_TAG} \
-            --image nameforge:latest \
+            --registry "${{ steps.infra.outputs.acr_name }}" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --image "${{ steps.infra.outputs.image_repository }}:${IMAGE_TAG}" \
+            --image "${{ steps.infra.outputs.image_repository }}:latest" \
             .
 
       - name: Deploy new revision to Container App
@@ -83,10 +120,13 @@ jobs:
           IMAGE_TAG=${{ github.sha }}
           REV_SUFFIX="sha-${IMAGE_TAG:0:7}"
           az containerapp update \
-            --name nameforge \
-            --resource-group NameForge \
-            --image nameforgeacr.azurecr.io/nameforge:${IMAGE_TAG} \
+            --name "${{ steps.infra.outputs.container_app_name }}" \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --image "${{ steps.infra.outputs.acr_login_server }}/${{ steps.infra.outputs.image_repository }}:${IMAGE_TAG}" \
             --revision-suffix ${REV_SUFFIX}
+
+      - name: Show Singapore app URL
+        run: echo "Deployed to ${{ steps.infra.outputs.container_app_url }}"
 
   # ── Auto-bump minor version ──────────────────────────────────────────────────
   version-bump:

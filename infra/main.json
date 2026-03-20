@@ -1,0 +1,304 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "15288464478502074580"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "southeastasia",
+      "metadata": {
+        "description": "Azure region for the Singapore deployment."
+      }
+    },
+    "containerAppName": {
+      "type": "string",
+      "defaultValue": "nameforge-sg",
+      "metadata": {
+        "description": "Container App name for the Singapore deployment."
+      }
+    },
+    "containerAppEnvironmentName": {
+      "type": "string",
+      "defaultValue": "nameforge-sg-env",
+      "metadata": {
+        "description": "Container Apps environment name for the Singapore deployment."
+      }
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string",
+      "defaultValue": "nameforge-sg-logs",
+      "metadata": {
+        "description": "Log Analytics workspace name for the Singapore deployment."
+      }
+    },
+    "imageRepository": {
+      "type": "string",
+      "defaultValue": "nameforge",
+      "metadata": {
+        "description": "Repository name inside ACR."
+      }
+    },
+    "containerImage": {
+      "type": "string",
+      "defaultValue": "mcr.microsoft.com/k8se/quickstart:latest",
+      "metadata": {
+        "description": "Bootstrap image used before the application image is pushed."
+      }
+    },
+    "llmProvider": {
+      "type": "string",
+      "defaultValue": "azure-foundry",
+      "metadata": {
+        "description": "AI provider passed to the container."
+      }
+    },
+    "azureFoundryEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Foundry endpoint used by the app."
+      }
+    },
+    "azureFoundryApiKey": {
+      "type": "securestring",
+      "metadata": {
+        "description": "Azure Foundry API key stored as a Container Apps secret."
+      }
+    },
+    "azureFoundryDeployment": {
+      "type": "string",
+      "defaultValue": "Kimi-K2.5",
+      "metadata": {
+        "description": "Azure Foundry deployment/model name."
+      }
+    },
+    "azureFoundryApiVersion": {
+      "type": "string",
+      "defaultValue": "2024-12-01-preview",
+      "metadata": {
+        "description": "Azure Foundry API version."
+      }
+    },
+    "containerPort": {
+      "type": "int",
+      "defaultValue": 3001,
+      "metadata": {
+        "description": "HTTP port exposed by the application."
+      }
+    },
+    "minReplicas": {
+      "type": "int",
+      "defaultValue": 0,
+      "metadata": {
+        "description": "Minimum replicas for the Container App."
+      }
+    },
+    "maxReplicas": {
+      "type": "int",
+      "defaultValue": 3,
+      "metadata": {
+        "description": "Maximum replicas for the Container App."
+      }
+    },
+    "cpuCores": {
+      "type": "string",
+      "defaultValue": "0.5",
+      "metadata": {
+        "description": "Requested CPU cores for the container."
+      }
+    },
+    "memory": {
+      "type": "string",
+      "defaultValue": "1Gi",
+      "metadata": {
+        "description": "Requested memory for the container."
+      }
+    }
+  },
+  "variables": {
+    "resourceToken": "[uniqueString(subscription().id, resourceGroup().id, parameters('containerAppName'), parameters('location'))]",
+    "acrName": "[toLower(replace(format('nameforgesg{0}', variables('resourceToken')), '-', ''))]",
+    "tags": {
+      "app": "NameForge",
+      "deployment": "singapore",
+      "region": "[parameters('location')]",
+      "managedBy": "bicep"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[parameters('logAnalyticsWorkspaceName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30,
+        "publicNetworkAccessForIngestion": "Enabled",
+        "publicNetworkAccessForQuery": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('acrName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic"
+      },
+      "tags": "[variables('tags')]",
+      "properties": {
+        "adminUserEnabled": true,
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('containerAppEnvironmentName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName')), '2023-09-01').customerId]",
+            "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName')), '2023-09-01').primarySharedKey]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsWorkspaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
+      "name": "[parameters('containerAppName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppEnvironmentName'))]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "maxInactiveRevisions": 100,
+          "ingress": {
+            "allowInsecure": false,
+            "external": true,
+            "targetPort": "[parameters('containerPort')]",
+            "transport": "Auto"
+          },
+          "registries": [
+            {
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').loginServer]",
+              "username": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').username]",
+              "passwordSecretRef": "registry-password"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "registry-password",
+              "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').passwords[0].value]"
+            },
+            {
+              "name": "azure-foundry-api-key",
+              "value": "[parameters('azureFoundryApiKey')]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "nameforge",
+              "image": "[parameters('containerImage')]",
+              "env": [
+                {
+                  "name": "LLM_PROVIDER",
+                  "value": "[parameters('llmProvider')]"
+                },
+                {
+                  "name": "AZURE_FOUNDRY_ENDPOINT",
+                  "value": "[parameters('azureFoundryEndpoint')]"
+                },
+                {
+                  "name": "AZURE_FOUNDRY_API_KEY",
+                  "secretRef": "azure-foundry-api-key"
+                },
+                {
+                  "name": "AZURE_FOUNDRY_DEPLOYMENT",
+                  "value": "[parameters('azureFoundryDeployment')]"
+                },
+                {
+                  "name": "AZURE_FOUNDRY_API_VERSION",
+                  "value": "[parameters('azureFoundryApiVersion')]"
+                },
+                {
+                  "name": "NODE_ENV",
+                  "value": "production"
+                },
+                {
+                  "name": "SERVE_STATIC",
+                  "value": "true"
+                },
+                {
+                  "name": "PORT",
+                  "value": "[string(parameters('containerPort'))]"
+                }
+              ],
+              "resources": {
+                "cpu": "[json(parameters('cpuCores'))]",
+                "memory": "[parameters('memory')]"
+              }
+            }
+          ],
+          "scale": {
+            "minReplicas": "[parameters('minReplicas')]",
+            "maxReplicas": "[parameters('maxReplicas')]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppEnvironmentName'))]",
+        "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "acrName": {
+      "type": "string",
+      "value": "[variables('acrName')]"
+    },
+    "acrLoginServer": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').loginServer]"
+    },
+    "containerAppEnvironmentId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.App/managedEnvironments', parameters('containerAppEnvironmentName'))]"
+    },
+    "containerAppName": {
+      "type": "string",
+      "value": "[parameters('containerAppName')]"
+    },
+    "containerAppUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', parameters('containerAppName')), '2024-03-01').configuration.ingress.fqdn)]"
+    },
+    "imageRepository": {
+      "type": "string",
+      "value": "[parameters('imageRepository')]"
+    },
+    "locationName": {
+      "type": "string",
+      "value": "[parameters('location')]"
+    }
+  }
+}
