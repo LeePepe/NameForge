@@ -15,6 +15,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { AzureOpenAI } from "openai";
+import { jsonrepair } from "jsonrepair";
 
 export interface NameSuggestion {
   name: string;
@@ -26,19 +27,33 @@ export interface NameSuggestion {
 export interface GenerateNamesParams {
   stylePrompt: string;
   projectPrompt: string;
+  excludeNames?: string[];
 }
 
 export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "done"; suggestions: NameSuggestion[] };
 
+interface InternalGenerateNamesParams extends GenerateNamesParams {
+  retryReason?: string;
+}
+
 // ─── Prompt builder ──────────────────────────────────────────────────────────
 
 /** @internal exported for unit testing */
-export function buildPrompt(params: GenerateNamesParams): string {
-  const { stylePrompt, projectPrompt } = params;
+export function buildPrompt(params: InternalGenerateNamesParams): string {
+  const { stylePrompt, projectPrompt, excludeNames, retryReason } = params;
   const styleSection = stylePrompt
     ? `**Naming style preferences (apply to all suggestions):**\n${stylePrompt}\n\n`
+    : "";
+  const excludeSection =
+    excludeNames && excludeNames.length > 0
+      ? `**Previously shown names to avoid:**\n${excludeNames
+          .map((name) => `- ${name}`)
+          .join("\n")}\n\n`
+      : "";
+  const retrySection = retryReason
+    ? `**Correction for this retry:**\n${retryReason}\n\n`
     : "";
 
   return `You are an expert brand naming consultant with 20 years of experience naming startups, products, and projects.
@@ -46,7 +61,10 @@ export function buildPrompt(params: GenerateNamesParams): string {
 ${styleSection}**Project to name:**
 ${projectPrompt}
 
-Generate exactly 6 unique, memorable name suggestions for this project.
+${excludeSection}${retrySection}Generate exactly 6 unique, memorable name suggestions for this project.
+Anchor every name to the project description itself: the user, workflow, problem, domain, or outcome should visibly influence the name.
+Avoid generic AI/SaaS names that could fit a different product with no changes.
+Do not reuse, remix, or closely imitate any previously shown names or their spelling variants.
 ${stylePrompt ? "Respect the naming style preferences above strictly." : ""}
 
 Return ONLY a valid JSON object — no markdown, no explanation, no code fences:
@@ -55,13 +73,13 @@ Return ONLY a valid JSON object — no markdown, no explanation, no code fences:
     {
       "name": "ExampleName",
       "tagline": "Short punchy tagline (max 6 words)",
-      "explanation": "1-2 sentences on why this name fits.",
+      "explanation": "1-2 sentences on why this name fits this project description specifically.",
       "score": 92
     }
   ]
 }
 
-Score each name 1-100 based on how well it fits both the project and the style preferences.`;
+Score each name 1-100 based on how well it fits both the project description and the style preferences.`;
 }
 
 /** @internal exported for unit testing */
@@ -74,7 +92,14 @@ export function parseSuggestions(text: string): NameSuggestion[] {
     .replace(/\n?```$/, "")
     .trim();
 
-  const parsed = JSON.parse(jsonText) as { suggestions: NameSuggestion[] };
+  let parsed: { suggestions: NameSuggestion[] };
+  try {
+    parsed = JSON.parse(jsonText) as { suggestions: NameSuggestion[] };
+  } catch {
+    parsed = JSON.parse(jsonrepair(jsonText)) as {
+      suggestions: NameSuggestion[];
+    };
+  }
 
   if (!Array.isArray(parsed.suggestions)) {
     throw new Error("Invalid response format from AI provider");
@@ -83,10 +108,97 @@ export function parseSuggestions(text: string): NameSuggestion[] {
   return parsed.suggestions;
 }
 
+function normalizeName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function removeCommonSuffixes(name: string): string {
+  const stripped = name.replace(
+    /(ings?|ers?|ors?|ly|ify|ive|io|ai|hq|labs?|app|x|e)$/g,
+    ""
+  );
+  return stripped.length >= 4 ? stripped : name;
+}
+
+function buildSkeleton(name: string): string {
+  if (!name) return "";
+  return name[0] + name.slice(1).replace(/[aeiouy]/g, "");
+}
+
+export function areNamesTooSimilar(a: string, b: string): boolean {
+  const left = normalizeName(a);
+  const right = normalizeName(b);
+
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  if (
+    Math.abs(left.length - right.length) <= 2 &&
+    (left.startsWith(right) || right.startsWith(left))
+  ) {
+    return true;
+  }
+
+  const leftBase = removeCommonSuffixes(left);
+  const rightBase = removeCommonSuffixes(right);
+  if (leftBase === rightBase && leftBase.length >= 4) {
+    return true;
+  }
+
+  return (
+    buildSkeleton(left) === buildSkeleton(right) &&
+    Math.min(left.length, right.length) >= 5
+  );
+}
+
+export function filterNameSuggestions(
+  suggestions: NameSuggestion[],
+  excludedNames: string[] = []
+): NameSuggestion[] {
+  const accepted: NameSuggestion[] = [];
+  const seen = [...excludedNames];
+
+  for (const suggestion of suggestions) {
+    const name = suggestion.name?.trim();
+    if (!name) continue;
+
+    if (seen.some((existing) => areNamesTooSimilar(existing, name))) {
+      continue;
+    }
+
+    accepted.push({ ...suggestion, name });
+    seen.push(name);
+  }
+
+  return accepted;
+}
+
+async function generateNamesOnce(
+  params: InternalGenerateNamesParams
+): Promise<NameSuggestion[]> {
+  const provider = (process.env.LLM_PROVIDER || "claude-code").toLowerCase();
+
+  switch (provider) {
+    case "claude-code":
+      return generateWithClaudeCode(params);
+    case "anthropic-api":
+      return generateWithAnthropicApi(params);
+    case "ollama":
+      return generateWithOllama(params);
+    case "azure-foundry":
+      return generateWithAzureFoundry(params);
+    default:
+      throw new Error(
+        `Unknown LLM_PROVIDER: "${provider}". ` +
+          `Valid values: claude-code, anthropic-api, ollama, azure-foundry`
+      );
+  }
+}
+
 // ─── Provider: claude-code ────────────────────────────────────────────────────
 
 async function generateWithClaudeCode(
-  params: GenerateNamesParams
+  params: InternalGenerateNamesParams
 ): Promise<NameSuggestion[]> {
   // Dynamically imported so the server still starts even if this SDK is not
   // installed (e.g. in a cloud deployment that only has @anthropic-ai/sdk).
@@ -111,7 +223,7 @@ async function generateWithClaudeCode(
 // ─── Provider: anthropic-api ──────────────────────────────────────────────────
 
 async function generateWithAnthropicApi(
-  params: GenerateNamesParams
+  params: InternalGenerateNamesParams
 ): Promise<NameSuggestion[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -136,7 +248,7 @@ async function generateWithAnthropicApi(
 // ─── Provider: ollama ─────────────────────────────────────────────────────────
 
 async function generateWithOllama(
-  params: GenerateNamesParams
+  params: InternalGenerateNamesParams
 ): Promise<NameSuggestion[]> {
   const baseUrl = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
   const model = process.env.OLLAMA_MODEL || "llama3.2";
@@ -169,7 +281,7 @@ async function generateWithOllama(
 // ─── Provider: azure-foundry ──────────────────────────────────────────────────
 
 async function generateWithAzureFoundry(
-  params: GenerateNamesParams
+  params: InternalGenerateNamesParams
 ): Promise<NameSuggestion[]> {
   const apiKey = process.env.AZURE_FOUNDRY_API_KEY;
   const endpoint = process.env.AZURE_FOUNDRY_ENDPOINT;
@@ -337,23 +449,29 @@ async function* streamAnthropicApi(
 export async function generateNames(
   params: GenerateNamesParams
 ): Promise<NameSuggestion[]> {
-  const provider = (process.env.LLM_PROVIDER || "claude-code").toLowerCase();
+  let excludedNames = [...(params.excludeNames ?? [])];
+  let accepted: NameSuggestion[] = [];
+  let retryReason: string | undefined;
 
-  switch (provider) {
-    case "claude-code":
-      return generateWithClaudeCode(params);
-    case "anthropic-api":
-      return generateWithAnthropicApi(params);
-    case "ollama":
-      return generateWithOllama(params);
-    case "azure-foundry":
-      return generateWithAzureFoundry(params);
-    default:
-      throw new Error(
-        `Unknown LLM_PROVIDER: "${provider}". ` +
-          `Valid values: claude-code, anthropic-api, ollama, azure-foundry`
-      );
+  for (let attempt = 0; attempt < 2 && accepted.length < 6; attempt++) {
+    const batch = await generateNamesOnce({
+      ...params,
+      excludeNames: excludedNames,
+      retryReason,
+    });
+    const filtered = filterNameSuggestions(batch, excludedNames);
+
+    accepted = [...accepted, ...filtered].slice(0, 6);
+    excludedNames = [...excludedNames, ...accepted.map((item) => item.name)];
+
+    if (accepted.length < 6) {
+      retryReason =
+        "The previous response reused earlier names or near-duplicate variants. " +
+        "Return only fresh replacements that connect more directly to the project description.";
+    }
   }
+
+  return accepted;
 }
 
 /**

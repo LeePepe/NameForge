@@ -32,7 +32,24 @@ function validateRequest(body: unknown): {
     return { valid: false, error: "stylePrompt must be at most 2000 characters" };
   }
 
-  return { valid: true, params: { stylePrompt, projectPrompt } };
+  let excludeNames: string[] = [];
+  if (b.excludeNames !== undefined) {
+    if (
+      !Array.isArray(b.excludeNames) ||
+      b.excludeNames.some((item) => typeof item !== "string")
+    ) {
+      return {
+        valid: false,
+        error: "excludeNames must be an array of strings",
+      };
+    }
+
+    excludeNames = b.excludeNames
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+
+  return { valid: true, params: { stylePrompt, projectPrompt, excludeNames } };
 }
 
 router.post("/generate-names", async (req: Request, res: Response) => {

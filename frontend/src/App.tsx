@@ -4,6 +4,7 @@ import NameResults from "./components/NameResults";
 import LoadingSpinner from "./components/LoadingSpinner";
 import { generateNames, NameApiError } from "./api/nameApi";
 import type { NameSuggestion, GenerateNamesParams } from "./api/nameApi";
+import { mergeSeenNames } from "./lib/nameHistory";
 
 type AppState = "form" | "loading" | "results" | "error";
 
@@ -122,15 +123,20 @@ export default function App() {
   const [lastParams, setLastParams] = useState<GenerateNamesParams | null>(
     null
   );
+  const [seenNames, setSeenNames] = useState<string[]>([]);
 
-  async function handleGenerate(params: GenerateNamesParams) {
+  async function runGeneration(
+    params: GenerateNamesParams,
+    excludeNames: string[]
+  ) {
     setLastParams(params);
     setAppState("loading");
     setErrorMessage("");
 
     try {
-      const results = await generateNames(params);
+      const results = await generateNames({ ...params, excludeNames });
       setSuggestions(results);
+      setSeenNames(mergeSeenNames(excludeNames, results.map((item) => item.name)));
       setAppState("results");
     } catch (err) {
       if (err instanceof NameApiError) {
@@ -144,9 +150,13 @@ export default function App() {
     }
   }
 
+  async function handleGenerate(params: GenerateNamesParams) {
+    await runGeneration(params, []);
+  }
+
   function handleGenerateMore() {
     if (lastParams) {
-      void handleGenerate(lastParams);
+      void runGeneration(lastParams, seenNames);
     }
   }
 

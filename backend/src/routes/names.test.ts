@@ -64,12 +64,26 @@ describe("POST /api/generate-names", () => {
     expect(res.body.error).toContain("2000");
   });
 
+  it("returns 400 when excludeNames is not an array of strings", async () => {
+    const res = await request(app)
+      .post("/api/generate-names")
+      .send({ ...VALID_BODY, excludeNames: ["Good", 123] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("excludeNames");
+  });
+
   it("returns 200 with suggestions on success", async () => {
     vi.mocked(generateNames).mockResolvedValueOnce([MOCK_SUGGESTION]);
-    const res = await request(app).post("/api/generate-names").send(VALID_BODY);
+    const res = await request(app)
+      .post("/api/generate-names")
+      .send({ ...VALID_BODY, excludeNames: ["Notiv"] });
     expect(res.status).toBe(200);
     expect(res.body.suggestions).toHaveLength(1);
     expect(res.body.suggestions[0].name).toBe("TeamForge");
+    expect(generateNames).toHaveBeenCalledWith({
+      ...VALID_BODY,
+      excludeNames: ["Notiv"],
+    });
   });
 
   it("returns 500 when provider throws", async () => {
@@ -134,7 +148,7 @@ describe("POST /api/generate-names-stream", () => {
     });
     const res = await request(app)
       .post("/api/generate-names-stream")
-      .send(VALID_BODY);
+      .send({ ...VALID_BODY, excludeNames: ["Notiv"] });
     const events = parseSseText(res.text);
     const resultEvent = events.find((e) => e.event === "result");
     expect(resultEvent).toBeDefined();
@@ -142,6 +156,10 @@ describe("POST /api/generate-names-stream", () => {
       suggestions: typeof MOCK_SUGGESTION[];
     };
     expect(parsed.suggestions[0].name).toBe("TeamForge");
+    expect(generateNamesStream).toHaveBeenCalledWith({
+      ...VALID_BODY,
+      excludeNames: ["Notiv"],
+    });
   });
 
   it("forwards token events", async () => {

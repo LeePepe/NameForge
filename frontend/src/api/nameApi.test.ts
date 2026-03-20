@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { generateNames, NameApiError } from "./nameApi";
+import { generateNames, NameApiError, resolveApiUrl } from "./nameApi";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +66,50 @@ describe("generateNames (nameApi)", () => {
     await expect(generateNames(VALID_PARAMS)).rejects.toBeInstanceOf(
       NameApiError
     );
+  });
+
+  it("sends excludeNames in the request body when provided", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: makeSseStream(
+        `event: result\ndata: ${JSON.stringify({ suggestions: [MOCK_SUGGESTION] })}\n\n`
+      ),
+      json: async () => ({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await generateNames({
+      ...VALID_PARAMS,
+      excludeNames: ["Notiv", "Memox"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/generate-names-stream"),
+      expect.objectContaining({
+        body: JSON.stringify({
+          ...VALID_PARAMS,
+          excludeNames: ["Notiv", "Memox"],
+        }),
+      })
+    );
+  });
+
+  it("defaults to backend localhost URL in dev when VITE_API_URL is unset", () => {
+    expect(resolveApiUrl({ DEV: true })).toBe("http://localhost:3001");
+  });
+
+  it("uses same-origin in production when VITE_API_URL is unset", () => {
+    expect(resolveApiUrl({ DEV: false })).toBe("");
+  });
+
+  it("prefers explicit VITE_API_URL over dev default", () => {
+    expect(
+      resolveApiUrl({
+        DEV: true,
+        VITE_API_URL: "https://example.test",
+      })
+    ).toBe("https://example.test");
   });
 
   it("includes HTTP status code in NameApiError", async () => {

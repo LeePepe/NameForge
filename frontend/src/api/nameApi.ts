@@ -1,6 +1,16 @@
 // Empty string = same-origin (Vercel / Docker single-container).
 // Override with VITE_API_URL for split-deployment local dev.
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+type ApiEnv = {
+  DEV?: boolean;
+  VITE_API_URL?: string;
+};
+
+export function resolveApiUrl(env: ApiEnv = import.meta.env): string {
+  if (env.VITE_API_URL) return env.VITE_API_URL;
+  return env.DEV ? "http://localhost:3001" : "";
+}
+
+const API_URL = resolveApiUrl();
 
 export interface NameSuggestion {
   name: string;
@@ -12,6 +22,7 @@ export interface NameSuggestion {
 export interface GenerateNamesParams {
   stylePrompt: string;
   projectPrompt: string;
+  excludeNames?: string[];
 }
 
 export interface GenerateNamesResponse {

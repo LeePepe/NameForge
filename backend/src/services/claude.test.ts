@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { parseSuggestions, buildPrompt } from "./claude";
+import {
+  parseSuggestions,
+  buildPrompt,
+  filterNameSuggestions,
+} from "./claude";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +61,13 @@ describe("parseSuggestions", () => {
     expect(() => parseSuggestions("not json")).toThrow();
   });
 
+  it("repairs common LLM JSON with unescaped quotes inside strings", () => {
+    const input =
+      '{"suggestions":[{"name":"TestName","tagline":"A short tagline","explanation":"He said "hello" today.","score":85}]}';
+    const result = parseSuggestions(input);
+    expect(result[0].explanation).toBe('He said "hello" today.');
+  });
+
   it("throws when suggestions is not an array", () => {
     const bad = JSON.stringify({ suggestions: "oops" });
     expect(() => parseSuggestions(bad)).toThrow("Invalid response format");
@@ -104,5 +115,31 @@ describe("buildPrompt", () => {
   it("requests JSON output", () => {
     const prompt = buildPrompt(base);
     expect(prompt).toContain("JSON");
+  });
+
+  it("includes excluded names and project-grounding rules", () => {
+    const prompt = buildPrompt({
+      ...base,
+      excludeNames: ["Notiv", "Memox"],
+    });
+    expect(prompt).toContain("Notiv");
+    expect(prompt).toContain("Memox");
+    expect(prompt).toContain("project description");
+    expect(prompt).toContain("Do not reuse");
+  });
+});
+
+describe("filterNameSuggestions", () => {
+  it("filters exact and near-duplicate names against history and current batch", () => {
+    const suggestions = [
+      { ...VALID_SUGGESTION, name: "Notiv" },
+      { ...VALID_SUGGESTION, name: "Notive" },
+      { ...VALID_SUGGESTION, name: "MemoX" },
+      { ...VALID_SUGGESTION, name: "ProjectMint" },
+    ];
+
+    const result = filterNameSuggestions(suggestions, ["Memox"]);
+
+    expect(result.map((item) => item.name)).toEqual(["Notiv", "ProjectMint"]);
   });
 });
