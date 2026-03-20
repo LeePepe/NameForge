@@ -127,6 +127,20 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("project description");
     expect(prompt).toContain("Do not reuse");
   });
+
+  it("asks the model to infer tagline and explanation language from both prompts", () => {
+    const prompt = buildPrompt({
+      projectPrompt: "为独立开发者生成产品名字和品牌方向",
+      stylePrompt: "Short, crisp, modern names",
+    });
+
+    expect(prompt).toContain(
+      'Use the primary language implied by the combined project description and naming style preferences for the "tagline" and "explanation".'
+    );
+    expect(prompt).toContain(
+      'Decide that language yourself from both inputs instead of defaulting to English.'
+    );
+  });
 });
 
 describe("filterNameSuggestions", () => {

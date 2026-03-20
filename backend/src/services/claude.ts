@@ -55,13 +55,17 @@ export function buildPrompt(params: InternalGenerateNamesParams): string {
   const retrySection = retryReason
     ? `**Correction for this retry:**\n${retryReason}\n\n`
     : "";
+  const languageSection =
+    'Use the primary language implied by the combined project description and naming style preferences for the "tagline" and "explanation".\n' +
+    "Decide that language yourself from both inputs instead of defaulting to English.\n" +
+    `Keep the "name" itself in whatever language or form best fits the brief.\n\n`;
 
   return `You are an expert brand naming consultant with 20 years of experience naming startups, products, and projects.
 
 ${styleSection}**Project to name:**
 ${projectPrompt}
 
-${excludeSection}${retrySection}Generate exactly 6 unique, memorable name suggestions for this project.
+${excludeSection}${retrySection}${languageSection}Generate exactly 6 unique, memorable name suggestions for this project.
 Anchor every name to the project description itself: the user, workflow, problem, domain, or outcome should visibly influence the name.
 Avoid generic AI/SaaS names that could fit a different product with no changes.
 Do not reuse, remix, or closely imitate any previously shown names or their spelling variants.
