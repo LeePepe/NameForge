@@ -83,17 +83,24 @@ Open http://localhost:3001
 
 ---
 
-## Deploy to Vercel
+## Deploy to Azure Container Apps
 
-1. Push this repo to GitHub
-2. Import the project at [vercel.com/new](https://vercel.com/new)
-3. Set environment variables in Vercel dashboard:
-   - `LLM_PROVIDER` = `azure-foundry` (or `anthropic-api`)
-   - For Azure Foundry: `AZURE_FOUNDRY_ENDPOINT`, `AZURE_FOUNDRY_API_KEY`, optionally `AZURE_FOUNDRY_DEPLOYMENT`
-   - For Anthropic: `ANTHROPIC_API_KEY`
-4. Deploy
+Production deploys now target Azure Container Apps in `Southeast Asia` (Singapore) via GitHub Actions.
 
-The `vercel.json` in the root handles routing: `/api/*` and `/health` go to the Express backend; everything else is served from the built frontend.
+1. Create these GitHub repository secrets:
+   - `AZURE_CREDENTIALS`
+   - `AZURE_FOUNDRY_API_KEY`
+2. Create these GitHub repository variables:
+   - `AZURE_FOUNDRY_ENDPOINT`
+   - `AZURE_FOUNDRY_DEPLOYMENT` (optional, defaults to `Kimi-K2.5`)
+   - `AZURE_FOUNDRY_API_VERSION` (optional, defaults to `2024-12-01-preview`)
+3. Push to `main`
+4. The workflow will:
+   - provision or update the Singapore Log Analytics workspace, Container Apps environment, ACR, and Container App from `infra/main.bicep`
+   - build the Docker image in the Singapore ACR
+   - deploy the new image to the Singapore Container App
+
+The deployment keeps the existing `NameForge` resource group, but creates a separate Singapore application stack so it can coexist with the older `East US` deployment during migration.
 
 ---
 
@@ -126,7 +133,7 @@ SERVE_STATIC=true
 | `ANTHROPIC_MODEL` | `claude-opus-4-5` | Anthropic model to use |
 | `AZURE_FOUNDRY_ENDPOINT` | — | Required when `LLM_PROVIDER=azure-foundry` (e.g. `https://your-resource.cognitiveservices.azure.com/`) |
 | `AZURE_FOUNDRY_API_KEY` | — | Required when `LLM_PROVIDER=azure-foundry` |
-| `AZURE_FOUNDRY_DEPLOYMENT` | `DeepSeek-R1-0528` | Azure Foundry model deployment name |
+| `AZURE_FOUNDRY_DEPLOYMENT` | `Kimi-K2.5` | Azure Foundry model deployment name |
 | `AZURE_FOUNDRY_API_VERSION` | `2024-12-01-preview` | Azure OpenAI API version |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `OLLAMA_MODEL` | `llama3.2` | Ollama model to use |
