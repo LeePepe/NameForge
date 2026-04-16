@@ -27,7 +27,7 @@ Built with React + TypeScript (frontend) and Node.js + Express (backend). Suppor
 ### Setup
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/NameForge.git
+git clone https://github.com/LeePepe/NameForge.git
 cd NameForge
 
 # Install all dependencies
