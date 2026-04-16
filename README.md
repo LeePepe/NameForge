@@ -159,8 +159,7 @@ NameForge/
 │       └── services/
 │           └── claude.ts   # AI provider abstraction
 ├── Dockerfile         # Single-container production build
-├── docker-compose.yml # Multi-profile orchestration
-└── vercel.json        # Vercel deployment config
+└── docker-compose.yml # Multi-profile orchestration
 ```
 
 ---

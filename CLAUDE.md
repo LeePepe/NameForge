@@ -99,7 +99,6 @@ This is an **npm workspaces monorepo** with two packages: `frontend/` and `backe
 |------|-----|----------------|
 | Local dev | `npm run dev` (concurrently) | Vite dev server on :5173 |
 | Docker | `docker compose --profile anthropic\|ollama up` | Express serves `/public` |
-| Vercel | `vercel.json` routes `/api/*` to backend, `/*` to frontend | Vercel static CDN |
 
 ### Adding a New AI Provider
 

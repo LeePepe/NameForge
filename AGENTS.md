@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-`frontend/` contains the React + TypeScript Vite app. Main UI code lives in `frontend/src/`, with API helpers under `src/api/` and reusable UI in `src/components/`. `backend/` contains the Express + TypeScript API; entrypoint is `backend/src/index.ts`, routes live in `backend/src/routes/`, and AI provider logic lives in `backend/src/services/`. Root-level deployment files include `Dockerfile`, `docker-compose.yml`, `vercel.json`, and CI in `.github/workflows/ci.yml`.
+`frontend/` contains the React + TypeScript Vite app. Main UI code lives in `frontend/src/`, with API helpers under `src/api/` and reusable UI in `src/components/`. `backend/` contains the Express + TypeScript API; entrypoint is `backend/src/index.ts`, routes live in `backend/src/routes/`, and AI provider logic lives in `backend/src/services/`. Root-level deployment files include `Dockerfile`, `docker-compose.yml`, and CI in `.github/workflows/ci.yml`.
 
 ## Build, Test, and Development Commands
 Run `npm install` at the repo root to install workspace dependencies. Use `npm run dev` to start the backend and frontend together with hot reload. Use `npm run build` from the root to build both workspaces, or target one side with `npm run build --workspace=frontend` and `npm run build --workspace=backend`. Frontend-only checks also support `npm run typecheck --workspace=frontend`.
