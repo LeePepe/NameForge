@@ -32,6 +32,7 @@ npm run test --workspace=frontend    # vitest run (once)
 
 # Docker
 ANTHROPIC_API_KEY=sk-ant-xxx docker compose --profile anthropic up
+AZURE_FOUNDRY_ENDPOINT=*** AZURE_FOUNDRY_API_KEY=*** docker compose --profile azure-foundry up
 docker compose --profile ollama up
 ```
 
@@ -98,7 +99,7 @@ This is an **npm workspaces monorepo** with two packages: `frontend/` and `backe
 | Mode | How | Static serving |
 |------|-----|----------------|
 | Local dev | `npm run dev` (concurrently) | Vite dev server on :5173 |
-| Docker | `docker compose --profile anthropic\|ollama up` | Express serves `/public` |
+| Docker | `docker compose --profile anthropic\|azure-foundry\|ollama up` | Express serves `/public` |
 
 ### Adding a New AI Provider
 
